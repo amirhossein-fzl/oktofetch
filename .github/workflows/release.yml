@@ -76,6 +76,13 @@ jobs:
           # GZIP_ENV sets max gzip compression level (-9) used by tar's -z flag
           GZIP=-9 tar -czf "$ASSET" -C stage "${{ env.BIN_NAME }}"
           echo "ASSET_PATH=$ASSET" >> "$GITHUB_ENV"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BIN_NAME }}-${{ matrix.os_name }}-${{ matrix.arch }}
+          path: ${{ env.ASSET_PATH }}
+          if-no-files-found: error
   release:
     name: Publish GitHub Release
     needs: build

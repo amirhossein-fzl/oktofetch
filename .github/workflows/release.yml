@@ -89,7 +89,7 @@ jobs:
       - name: Flatten artifacts into one folder
         run: |
           mkdir -p dist
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} dist/ \;
+          find artifacts -type f \( -name "*.tar.gz" \) -exec cp {} dist/ \;
           ls -al dist
 
       - name: Create GitHub Release and upload assets

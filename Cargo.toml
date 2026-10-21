@@ -10,6 +10,15 @@ readme = "README.md"
 keywords = ["github", "releases", "binary", "cli", "installer"]
 categories = ["command-line-utilities", "development-tools"]
 
+[profile.release]
+strip = "symbols"
+debug = false
+opt-level = "z"
+lto = "fat"
+panic = "abort"
+codegen-units = 1
+split-debuginfo = "unpacked"
+
 [dependencies]
 # CLI
 clap = { version = "4.5", features = ["derive", "env"] }

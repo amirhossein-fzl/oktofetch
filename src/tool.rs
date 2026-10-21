@@ -34,14 +34,87 @@ pub async fn add_tool(
     let tool = Tool {
         name: tool_name.clone(),
         repo: repo.clone(),
-        binary_name,
+        binary_name: binary_name.clone(),
         asset_pattern: None,
         version: None,
     };
 
-    config.add_tool(tool)?;
-    config.save()?;
+    // Validate platform
+    platform::validate_platform()?;
+
+    // Fetch latest release
+    let client = GithubClient::new();
+    let release = client.get_latest_release(&tool.repo).await?;
+
+    println!("Latest version: {}", release.tag_name);
+
+    // Find matching asset
+    let asset = if let Some(pattern) = &tool.asset_pattern {
+        release
+            .assets
+            .iter()
+            .find(|a| a.name.contains(pattern))
+            .ok_or_else(|| OktofetchError::NoSuitableRelease {
+                platform: "Linux".to_string(),
+                arch: "x86_64".to_string(),
+            })?
+    } else {
+        let mut matching_assets: Vec<_> = release
+            .assets
+            .iter()
+            .filter(|a| platform::matches_asset_name(&a.name))
+            .collect();
+
+        if matching_assets.is_empty() {
+            return Err(OktofetchError::NoSuitableRelease {
+                platform: "Linux".to_string(),
+                arch: "x86_64".to_string(),
+            });
+        }
+
+        matching_assets.sort_by_key(|a| asset_priority(&a.name));
+        matching_assets[0]
+    };
+
+    // Download to temp directory
+    let temp_dir = TempDir::new()?;
+    let archive_path = temp_dir.path().join(&asset.name);
+
+    println!("Downloading {}...", asset.name);
+    client
+        .download_asset(&asset.browser_download_url, &archive_path)
+        .await?;
+
+    // Extract archive
+    let extracted_files = archive::extract_archive(&archive_path, temp_dir.path())?;
+
+    // Find binary
+    let binary_name_for_find = tool.binary_name.as_deref().unwrap_or(&tool.name);
+    let binary_path = binary::find_binary(&extracted_files, temp_dir.path(), binary_name_for_find)?;
+
+    // Install binary
+    let dest = binary::install_binary(
+        &binary_path,
+        &config.settings.install_dir(),
+        binary_name_for_find,
+    )?;
+
+    let mut final_tool = tool;
+    final_tool.version = Some(release.tag_name.clone());
+
+    if let Err(e) = config.add_tool(final_tool) {
+        let _ = std::fs::remove_file(&dest);
+        return Err(e);
+    }
+
+    if let Err(e) = config.save() {
+        let _ = config.remove_tool(&tool_name);
+        let _ = std::fs::remove_file(&dest);
+        return Err(e);
+    }
+
     println!("Added tool '{}' ({})", tool_name, repo);
+    println!("Installed {} to {}", tool_name, dest.display());
     Ok(())
 }
 
